@@ -293,6 +293,49 @@ def analyze_resume(text: str, roast_level: str) -> str:
             else:
                 raise Exception(f"An error occurred during resume analysis with the Gemini API: {e}")
 
+def generate_portfolio(text: str) -> str:
+    """Generates a complete single-file HTML/CSS portfolio from resume text."""
+    if not text or not text.strip():
+        raise ValueError("No resume text provided for generation.")
+    
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    prompt = (
+        "You are an elite frontend developer. Take this resume text and generate a complete, "
+        "single-file HTML and CSS portfolio website. The design MUST be a premium, modern dark-theme "
+        "with glassmorphism effects, neon-pink subtle glowing accents, and flawless typography. "
+        "Include sections for About, Experience, and Skills based ONLY on the provided resume data. "
+        "Output ONLY the raw HTML code, nothing else.\n\n"
+        "Resume Text:\n"
+        "-----------------\n"
+        f"{text}\n"
+        "-----------------\n"
+    )
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            if not response.text:
+                raise Exception("Received an empty response from the Gemini API.")
+            
+            code = response.text.strip()
+            if code.startswith("```html"):
+                code = code[7:]
+            elif code.startswith("```"):
+                code = code[3:]
+            if code.endswith("```"):
+                code = code[:-3]
+                
+            return code.strip()
+        except Exception as e:
+            error_msg = str(e)
+            if "429" in error_msg and attempt < max_retries - 1:
+                wait_time = 15 * (attempt + 1)
+                st.warning(f"⏳ API Rate limit hit. Automatically retrying in {wait_time} seconds (Attempt {attempt+1}/{max_retries})...")
+                time.sleep(wait_time)
+            else:
+                raise Exception(f"An error occurred during portfolio generation: {e}")
+
 # --- MAIN UI APPLICATION ---
 def main():
     inject_custom_css()
@@ -336,6 +379,7 @@ def main():
                     with st.spinner("Extracting text and summoning the elite recruiter..."):
                         # 1. Extract Text
                         resume_text = extract_text_from_pdf(uploaded_file)
+                        st.session_state['resume_text'] = resume_text
                         
                         # 2. Analyze
                         time.sleep(0.5) # Slight delay for smooth UI transition feel
@@ -377,6 +421,29 @@ def main():
                     file_name="Resume_Roast_Report.md",
                     mime="text/markdown"
                 )
+                
+                # --- PORTFOLIO BUILDER ---
+                st.divider()
+                st.subheader("🚀 Level Up: Instant Portfolio Builder")
+                
+                if st.button("Generate My Portfolio Website Code"):
+                    try:
+                        with st.spinner("Coding your premium portfolio..."):
+                            if 'resume_text' in st.session_state:
+                                r_text = st.session_state['resume_text']
+                            else:
+                                uploaded_file.seek(0)
+                                r_text = extract_text_from_pdf(uploaded_file)
+                                st.session_state['resume_text'] = r_text
+                                
+                            portfolio_code = generate_portfolio(r_text)
+                            st.session_state['portfolio_code'] = portfolio_code
+                    except Exception as e:
+                        st.error(f"System Error: {e}", icon="❌")
+                        
+                if 'portfolio_code' in st.session_state:
+                    st.success("✅ Premium Portfolio successfully generated!")
+                    st.code(st.session_state['portfolio_code'], language='html')
 
 if __name__ == "__main__":
     main()
